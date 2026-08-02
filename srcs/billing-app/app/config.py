@@ -5,6 +5,9 @@ from pathlib import Path
 load_dotenv()
 
 class Config:
+    BILLING_HOST = os.getenv("BILLING_HOST")
+    BILLING_PORT = int(os.getenv("BILLING_PORT"))
+
     DB_HOST = os.getenv("BILLING_DB_HOST")
     DB_PORT = int(os.getenv("BILLING_DB_PORT"))
     DB_NAME = os.getenv("BILLING_DB_NAME")
