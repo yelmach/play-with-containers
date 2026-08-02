@@ -1,0 +1,134 @@
+services:
+  rabbit-queue:
+    image: rabbit-queue
+    build:
+      context: ./srcs/rabbit-queue
+    container_name: rabbit-queue
+    restart: on-failure
+    env_file: .env
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - billing_network
+      - gateway_network
+
+  inventory-db:
+    image: inventory-db
+    build:
+      context: ./srcs/inventory-db
+    container_name: inventory-db
+    restart: on-failure
+    env_file: .env
+    volumes:
+      - inventory-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$INVENTORY_DB_USER -d $$INVENTORY_DB_NAME"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - inventory_network
+
+  billing-db:
+    image: billing-db
+    build:
+      context: ./srcs/billing-db
+    container_name: billing-db
+    restart: on-failure
+    env_file: .env
+    volumes:
+      - billing-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$BILLING_DB_USER -d $$BILLING_DB_NAME"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - billing_network
+
+  inventory-app:
+    image: inventory-app
+    build:
+      context: ./srcs/inventory-app
+    container_name: inventory-app
+    restart: on-failure
+    env_file: .env
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/movies', timeout=3)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - inventory_network
+      - gateway_network
+
+  billing-app:
+    image: billing-app
+    build:
+      context: ./srcs/billing-app
+    container_name: billing-app
+    restart: on-failure
+    env_file: .env
+    depends_on:
+      billing-db:
+        condition: service_healthy
+      rabbit-queue:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - billing_network
+
+  api-gateway-app:
+    image: api-gateway-app
+    build:
+      context: ./srcs/api-gateway-app
+    container_name: api-gateway-app
+    restart: on-failure
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - api-gateway-app:/var/log/api-gateway
+    depends_on:
+      inventory-app:
+        condition: service_healthy
+      rabbit-queue:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/api/movies', timeout=3)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - gateway_network
+
+volumes:
+  inventory-db:
+  billing-db:
+  api-gateway-app:
+
+networks:
+  inventory_network:
+  billing_network:
+  gateway_network:
